@@ -64,3 +64,11 @@ All entries share the same model alias (default `training-author`), with distinc
 Google applies rate limits per project rather than per API key. Keys in one project share the project's limits. Only configure keys and projects you are authorized to use. Real key validity, quota and provider delivery remain a separate acceptance check.
 
 References: https://docs.litellm.ai/docs/routing and https://ai.google.dev/gemini-api/docs/rate-limits .
+
+## Official provider templates
+
+`src/provider-templates.ts` is the authoritative registry of provider IDs, protocols, official endpoint bases, regional/resource requirements and documentation URLs. `GET /providers/templates` exposes only this public metadata. The hosting admin page reads it dynamically; no second address registry is maintained there.
+
+Copy [providers.example.env](providers.example.env) to private storage, choose `MODEL_TEMPLATE`, then fill the actual model/deployment ID and provider key(s). Leaving `MODEL_PROVIDER` and `MODEL_API_BASE` empty uses the selected template defaults. An explicitly supplied protocol must match. Workspace/resource placeholders must be replaced before generating configuration. Changing providers requires replacing their keys too; do not mix different vendors in one key pool. Addresses and account regions must match. Bedrock/Vertex IAM configurations require their provider-specific cloud credential setup and are not represented as a universal API-key base URL. Templates do not prove provider connectivity or model availability.
+
+Regenerate the documented env comments after a registry update: `node dist/provider-templates.js --env-help`. Endpoint sources and verification date are retained in every entry.
