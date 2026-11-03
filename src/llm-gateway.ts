@@ -173,4 +173,3 @@ export function llmGateway(o:GatewayOptions){
  forward('rerank',g=>g.rerank,'rerank_not_configured');
  return app;
 }
-
