@@ -1,0 +1,52 @@
+services:
+  gateway:
+    build: .
+    restart: unless-stopped
+    ports: ["127.0.0.1:4400:4400"]
+    environment:
+      COWORKER_MASTER_KEY: ${COWORKER_MASTER_KEY:?Private gateway master key required}
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?Private engine master key required}
+      LITELLM_BASE_URL: http://engine:4000
+    volumes: ["${COWORKER_DATA_DIR:?Private data directory required}:/data"]
+    depends_on:
+      engine: {condition: service_healthy}
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4400/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+  engine:
+    image: ghcr.io/berriai/litellm:v1.106.6
+    restart: unless-stopped
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+      LITELLM_SALT_KEY: ${LITELLM_SALT_KEY:?Persistent engine encryption salt required}
+      DATABASE_URL: postgresql://gateway:${GATEWAY_DB_PASSWORD:?Private database password required}@database:5432/gateway
+      STORE_MODEL_IN_DB: "True"
+    env_file: ${MODEL_ENV_FILE:?Private model provider environment required}
+    volumes: ["${MODEL_CONFIG_FILE:?Private engine model configuration required}:/app/config.yaml:ro"]
+    depends_on:
+      database: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/liveliness')"]
+      interval: 20s
+      timeout: 5s
+      retries: 10
+  database:
+    image: postgres:17-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: gateway
+      POSTGRES_USER: gateway
+      POSTGRES_PASSWORD: ${GATEWAY_DB_PASSWORD}
+    volumes: ["${GATEWAY_DB_DIR:?Private database directory required}:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gateway -d gateway"]
+      interval: 10s
+      timeout: 5s
+      retries: 10

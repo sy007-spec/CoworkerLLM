@@ -1,0 +1,13 @@
+# Copy to private runtime; configure an authorized provider key in models.env.
+model_list:
+  - model_name: training-author
+    litellm_params:
+      model: openai/your-model-name
+      api_base: os.environ/MODEL_API_BASE
+      api_key: os.environ/MODEL_API_KEY
+litellm_settings:
+  drop_params: true
+  set_verbose: false
+  turn_off_message_logging: true
+general_settings:
+  store_model_in_db: true

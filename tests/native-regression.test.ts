@@ -1,0 +1,7 @@
+import {it,expect} from 'vitest';
+import {llmGateway} from '../src/llm-gateway.js';
+import {UsageLedger} from '../src/llm-usage.js';
+import {resolveModel} from '../src/model-routing.js';
+
+it('extracted native admin config masks secrets and caller roles remain separate',async()=>{let config:any={chat:{baseUrl:'https://api.openai.com/v1',model:'native',apiKey:'secret-provider-value'}};const app=llmGateway({config:()=>config,callers:()=>({admin:'admin-test',saas:'saas-test'}),store:{load:()=>config,save:c=>config=c}});const read=(key:string)=>app.request('/v1/admin/config',{headers:{authorization:'Bearer '+key}});expect((await read('saas-test')).status).toBe(403);const r=await read('admin-test');expect(r.status).toBe(200);expect(await r.text()).not.toContain('secret-provider-value')});
+it('extracted usage ledger keeps numeric metadata, supports restart interruption and scope routing',()=>{const ledger=new UsageLedger(':memory:');const r:any={id:'test',operation:null,caller:'saas',space:null,merchant:null,capability:'chat',provider:'openai',model:'native',started:new Date().toISOString(),finished:new Date().toISOString(),status:'succeeded',httpStatus:200,ms:20,usage:{input:2,output:3,cached:null,reasoning:null},usageState:'reported'};ledger.start(r);ledger.finish(r);const result=ledger.query({});expect(JSON.stringify(result)).toContain('native');const model=resolveModel({chat:{model:'global'} as any,assignments:{spaces:{},merchants:{},bindings:{}}},'','chat');expect(model.up?.model).toBe('global')});
