@@ -52,3 +52,15 @@ Optional positive `max_budget` adds the engine's monetary cap. It requires Postg
 Reserve UTF-8 request bytes, requested output limit and framing allowance before inference. Settle completed reported input/output usage; retain the conservative reservation on failures, interruptions or missing usage. Retained amounts can exceed actual provider spend and are not an invoice. Rate-window tokens remain conservative reservations. Crash recovery does not return tokens; concurrency leases expire after five minutes. Deletion/revocation preserves usage history.
 
 Months use Asia/Shanghai. Issue a new month-bound key each month; an old-month key cannot use the next month's quota. Tenant identity is bound to the key and cannot be changed by a request header. Governance stores metadata only; the supplied engine configuration disables message logging.
+
+## Google AI Studio Gemini key pools
+
+Use `gemini-pool.example.env` as a private input template: set `MODEL_PROVIDER=gemini`, the model ID available in AI Studio, and `GEMINI_API_KEY_1`, `GEMINI_API_KEY_2`, etc. Native Gemini does not require `MODEL_API_BASE`. The older `MODEL_API_KEY` remains supported, as do numbered `MODEL_API_KEY_1` fields and comma-separated `MODEL_API_KEYS`. Duplicate key values are removed. Up to 64 unique keys are accepted.
+
+After building, run `node dist/engine-config.js /private/input.env /private/models.yaml /private/models.env`. The output configuration uses environment references, never plaintext keys. Both output files are private (mode 600). Back up the previous files before replacement and recreate the engine container after updating them so its environment is refreshed. Do not merely restart after changing an env_file.
+
+All entries share the same model alias (default `training-author`), with distinct deployment IDs. LiteLLM `simple-shuffle` balances requests across keys; it is not strict sequential round robin. Router retries are capped at two (or the pool size minus one), and unhealthy deployments use a 60-second cooldown. Pre-stream failure handling is delegated to the pinned engine; a partially emitted stream is never replayed by the application. All keys serve the same tenant model alias and token ledger, so rotating provider keys does not reset customer quotas.
+
+Google applies rate limits per project rather than per API key. Keys in one project share the project's limits. Only configure keys and projects you are authorized to use. Real key validity, quota and provider delivery remain a separate acceptance check.
+
+References: https://docs.litellm.ai/docs/routing and https://ai.google.dev/gemini-api/docs/rate-limits .
