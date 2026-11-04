@@ -74,3 +74,5 @@ Copy [providers.example.env](providers.example.env) to private storage, choose `
 Regenerate the documented env comments after a registry update: `node dist/provider-templates.js --env-help`. Endpoint sources and verification date are retained in every entry.
 
 A master-issued key may explicitly use `max_tokens: null` for usage-accounted access without a token-total cap. Omitting the field is still rejected. Model scope, tenant binding, expiry, revocation, RPM, TPM (when configured), concurrency and per-request limits remain enforced; existing numeric budgets are unchanged. This is not an availability guarantee.
+
+Explicit unallocated keys support up to 20 inline PNG/JPEG/WebP image parts in chat messages, within the existing 8MB request bound. Remote image URLs and other media parts are rejected. Finite token-budget keys remain text-only; reservations and actual provider usage accounting apply to all accepted requests.

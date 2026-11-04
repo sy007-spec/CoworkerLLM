@@ -37,9 +37,9 @@ export function coworkerGateway(o:GatewayOptions&{masterKey:string;governance:Go
   if(!o.engine)return c.json({error:'engine_not_configured'},503);
   const maximum=cap==='chat'?Number(body.max_output_tokens??body.max_tokens??body.max_completion_tokens??4096):0;if(!Number.isSafeInteger(maximum)||maximum<0||maximum>64000)return c.json({error:'invalid_output_limit'},400);if(cap==='chat'){if(responses)body.max_output_tokens=maximum;else body.max_tokens=maximum;delete body.max_completion_tokens}if(body.n!==undefined&&body.n!==1)return c.json({error:'one_completion_per_budgeted_request'},400)
   // UTF-8 bytes are a conservative upper bound for supported text tokenizers.
-  // Multimodal requests need provider-specific accounting and are refused on token keys.
+  // Inline vision is allowed only for explicitly unallocated keys; finite token budgets stay text-only.
   if(responses&&typeof body.input!=='string')return c.json({error:'text_input_required_for_budgeted_key'},400);if(completions&&typeof body.prompt!=='string')return c.json({error:'text_prompt_required_for_budgeted_key'},400);
-  if(cap==='chat'&&!responses&&!completions&&(!Array.isArray(body.messages)||body.messages.some((m:any)=>typeof m.content!=='string')))return c.json({error:'text_messages_required_for_budgeted_key'},400);
+  if(cap==='chat'&&!responses&&!completions){let images=0;const valid=(m:any)=>{if(typeof m?.content==='string')return true;if(key.max_tokens!==null||!Array.isArray(m?.content)||!m.content.length)return false;return m.content.every((part:any)=>{if(part?.type==='text')return typeof part.text==='string';if(part?.type!=='image_url'||typeof part.image_url?.url!=='string')return false;return ++images<=20&&/^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(part.image_url.url)})};if(!Array.isArray(body.messages)||!body.messages.every(valid))return c.json({error:'invalid_content_or_text_required_for_budgeted_key'},400)}
   const reservation=Buffer.byteLength(JSON.stringify(body))+maximum+2048;
   let lease;try{lease=gov.reserve(key,body.model,reservation)}catch(e){return c.json({error:(e as Error).message},(e as any).status||429)}
   const observed=usageObserver('openai',body.stream===true);let settled=false;
