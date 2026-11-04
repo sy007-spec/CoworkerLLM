@@ -13,6 +13,6 @@ const callers=():Record<string,string>=>{try{return JSON.parse(readFileSync(dir+
 const governance=new Governance(dir+'/governance.sqlite'),usage=new UsageLedger(dir+'/usage.sqlite');
 const masterKey=process.env.COWORKER_MASTER_KEY||'',baseURL=process.env.LITELLM_BASE_URL||'http://engine:4000',engineKey=process.env.LITELLM_MASTER_KEY||'';
 if(engineKey.length<32)throw Error('LITELLM_MASTER_KEY must contain at least 32 characters');
-const app=coworkerGateway({masterKey,governance,engine:{baseURL,masterKey:engineKey},config:load as any,callers,store:{load,save},usage,log:e=>console.log(JSON.stringify(e))});
+const app=coworkerGateway({healthMonitoring:true,masterKey,governance,engine:{baseURL,masterKey:engineKey},config:load as any,callers,store:{load,save},usage,log:e=>console.log(JSON.stringify(e))});
 const server=serve({fetch:app.fetch,port:Number(process.env.PORT||4400),hostname:process.env.HOST||'0.0.0.0'});
 for(const signal of ['SIGTERM','SIGINT'])process.once(signal,()=>server.close(()=>{governance.close();process.exit(0)}));

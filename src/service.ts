@@ -1,3 +1,4 @@
+import {ModelHealth} from './model-health.js';
 import {providerTemplates} from './provider-templates.js';
 import {AsyncLocalStorage} from 'node:async_hooks';
 import {timingSafeEqual} from 'node:crypto';
@@ -8,14 +9,18 @@ import {usageObserver} from './llm-usage.js';
 import {Governance} from './governance.js';
 
 type Context={key:string;name:string;space:string;up:Upstream;cap:Capability};
-export function coworkerGateway(o:GatewayOptions&{masterKey:string;governance:Governance;engine?:{baseURL:string;masterKey:string;fetcher?:typeof fetch}}){
+export function coworkerGateway(o:GatewayOptions&{masterKey:string;governance:Governance;healthMonitoring?:boolean;engine?:{baseURL:string;masterKey:string;fetcher?:typeof fetch}}){
  if(o.masterKey.length<32)throw Error('Master key must contain at least 32 characters');
  const app=new Hono(),context=new AsyncLocalStorage<Context>(),gov=o.governance;
+ const health=o.healthMonitoring&&o.engine?new ModelHealth(gov.db,o.engine):null;
  const same=(a:string,b:string)=>{const x=Buffer.from(a),y=Buffer.from(b);return x.length===y.length&&timingSafeEqual(x,y)};
  const isAdmin=(r:Request)=>same(r.headers.get('authorization')||'','Bearer '+o.masterKey);
  const catalog=()=>{const g=o.config();return (['chat','embedding','rerank'] as Capability[]).flatMap(cap=>{const entries=g?.pools?.[cap]?.entries??(g?.[cap]?[{...g[cap],id:g[cap]!.model}]:[]);return entries.filter(e=>e.baseUrl&&e.apiKey&&e.model).map(e=>({id:e.id||e.model!,cap,up:e as Upstream}))})};
  const native=llmGateway({...o,callers:()=>{const c=context.getStore();return {...o.callers(),admin:o.masterKey,...(c?{[c.name]:c.key}:{})}},config:()=>{const g=o.config(),c=context.getStore();if(!g||!c)return g;return {...g,assignments:undefined,pools:undefined,[c.cap]:c.up} as GatewayConfig}});
  app.onError((e,c)=>c.json({error:'gateway_error'},500));
+ app.get('/model-health',async c=>{if(!isAdmin(c.req.raw))return c.json({error:'unauthorized'},401);return health?c.json(await health.status()):c.json({error:'monitoring_disabled'},503)});
+ app.put('/model-health',async c=>{if(!isAdmin(c.req.raw))return c.json({error:'unauthorized'},401);try{return c.json(health?.configure(await c.req.json()))}catch{return c.json({error:'invalid_health_policy'},400)}});
+ app.post('/model-health/probe',async c=>{if(!isAdmin(c.req.raw))return c.json({error:'unauthorized'},401);void health?.tick().catch(()=>{});return c.json({ok:true},202)});
  app.get('/providers/templates',c=>c.json({templates:providerTemplates}));
  app.get('/healthz',c=>c.json({status:'alive',service:'CoworkerLLM'}));
  app.get('/readyz',async c=>{if(!o.engine)return c.json({ready:false},503);try{const r=await (o.engine.fetcher||fetch)(o.engine.baseURL+'/v1/models',{headers:{authorization:'Bearer '+o.engine.masterKey},redirect:'error',signal:AbortSignal.timeout(10000)});const d=await r.json() as any;const ready=r.ok&&Array.isArray(d.data)&&d.data.length>0;return c.json({ready},ready?200:503)}catch{return c.json({ready:false},503)}});
@@ -41,17 +46,20 @@ export function coworkerGateway(o:GatewayOptions&{masterKey:string;governance:Go
   if(responses&&typeof body.input!=='string')return c.json({error:'text_input_required_for_budgeted_key'},400);if(completions&&typeof body.prompt!=='string')return c.json({error:'text_prompt_required_for_budgeted_key'},400);
   if(cap==='chat'&&!responses&&!completions){let images=0;const valid=(m:any)=>{if(typeof m?.content==='string')return true;if(key.max_tokens!==null||!Array.isArray(m?.content)||!m.content.length)return false;return m.content.every((part:any)=>{if(part?.type==='text')return typeof part.text==='string';if(part?.type!=='image_url'||typeof part.image_url?.url!=='string')return false;return ++images<=20&&/^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(part.image_url.url)})};if(!Array.isArray(body.messages)||!body.messages.every(valid))return c.json({error:'invalid_content_or_text_required_for_budgeted_key'},400)}
   const reservation=Buffer.byteLength(JSON.stringify(body))+maximum+2048;
+  if(!key.models.includes(body.model))return c.json({error:'model_not_allowed'},403);
+  let selected:{id:string;alias:string;blocked:boolean}|null=null;try{selected=health&&cap==='chat'?await health.select(body.model,token,key.models):null}catch{return c.json({error:'no_available_models'},503)}
   let lease;try{lease=gov.reserve(key,body.model,reservation)}catch(e){return c.json({error:(e as Error).message},(e as any).status||429)}
   const observed=usageObserver('openai',body.stream===true);let settled=false;
   const finish=()=>{if(settled)return;settled=true;observed.end();const u=observed.usage;gov.settle(lease,u.input!==null&&(cap==='embedding'||u.output!==null)?u.input+(u.output??0):undefined)};
   const headers=new Headers(c.req.raw.headers);headers.set('x-space-id',key.metadata.tenant);headers.delete('content-length');
   try{
    headers.set('authorization','Bearer '+token);headers.delete('x-space-id');headers.delete('x-operation-id');
-   const response=await (o.engine.fetcher||fetch)(o.engine.baseURL+path,{method:'POST',headers,body:JSON.stringify(body),signal:AbortSignal.any([c.req.raw.signal,AbortSignal.timeout(o.timeoutMs||120000)]),redirect:'error'});
+   const selectedBody=selected?{...body,model:selected.id,num_retries:0}:body;const response=await (o.engine.fetcher||fetch)(o.engine.baseURL+path,{method:'POST',headers,body:JSON.stringify(selectedBody),signal:AbortSignal.any([c.req.raw.signal,AbortSignal.timeout(o.timeoutMs||120000)]),redirect:'error'});
+   if(selected&&!response.ok)health?.record(selected.id,response.status);
    if(!response.body){finish();return response}
-   const reader=response.body.getReader();let total=0;const stream=new ReadableStream<Uint8Array>({async pull(out){try{const r=await reader.read();if(r.done){finish();out.close()}else{total+=r.value.length;if(total>16*1024*1024){await reader.cancel();throw Error('response_too_large')}observed.push(r.value);out.enqueue(r.value)}}catch(e){finish();out.error(e)}},async cancel(reason){try{await reader.cancel(reason)}finally{finish()}}});
+   const reader=response.body.getReader();let total=0;const stream=new ReadableStream<Uint8Array>({async pull(out){try{const r=await reader.read();if(r.done){finish();if(selected&&response.ok)health?.record(selected.id,observed.failed?502:200);out.close()}else{total+=r.value.length;if(total>16*1024*1024){await reader.cancel();throw Error('response_too_large')}observed.push(r.value);out.enqueue(r.value)}}catch(e){if(selected&&!c.req.raw.signal.aborted)health?.record(selected.id,503);finish();out.error(e)}},async cancel(reason){try{await reader.cancel(reason)}finally{finish()}}});
    return new Response(stream,{status:response.status,headers:response.headers});
-  }catch{finish();return c.json({error:'upstream_unavailable'},502)}
+  }catch{if(selected&&!c.req.raw.signal.aborted)health?.record(selected.id,503);finish();return c.json({error:'upstream_unavailable'},502)}
  });
  return app;
 }
