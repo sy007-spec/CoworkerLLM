@@ -13,12 +13,12 @@
 | 维度 | TeachInPublic 独立站 | 教学托管平台 training.seii.top | Coworker SaaS |
 |---|---|---|---|
 | 代码 | [teach-in-public](https://github.com/sy007-spec/teach-in-public)（公开） | [top.seii.host.training](https://github.com/sy007-spec/top.seii.host.training)（私有，内含同一教学核心） | [inno-coworker-saas](https://github.com/sy007-spec/inno-coworker-saas)（私有） |
-| 生产 | 47.84，`teach-in-public:9f11d1f` | 43.106，`seii-training-hosting:8d58657` | 47.84，`inno-coworker-saas` 全套容器 |
+| 生产 | 47.84，`teach-in-public:9f11d1f` | 43.106，`seii-training-hosting:dec8abf` | 47.84，`inno-coworker-saas` 全套容器 |
 | 推理路径 | 课堂自有连接（DeepSeek、Gemini 池）直连供应商 | 课堂自有连接优先；Advanced 套餐的平台模型为 DeepSeek `deepseek-flash` 直连 | 自带内部 `llm-gateway`：对话、向量化、重排三类接入池，按平台→商户→空间解析；可选 ChatGPT/Codex 订阅授权 |
 | 是否经 CoworkerLLM | 否 | 否（网关就绪，仅“全局大模型”管理页读写其模型目录） | 否（未迁移） |
 | 知识库 | 单课程严格知识库：FTS5 + sqlite-vec，本地 multilingual-e5-small；引用 + 事实核验；课程/群讨论提炼为待复核卡片 | 同左 | 空间证据库（PostgreSQL FORCE RLS）；InnoData 完整检索（2026-10-25 起：BM25 + 1024 维 `qwen3.7-text-embedding` 向量 + `Qwen3-Reranker-8B` 重排，经内部网关；Wiki/图谱派生知识回填中），默认引擎；RAGFlow 0.22.1 按商户许可启用；飞书采集 |
 | 用量账本 | 课堂内调用诊断与知识诊断 | 同左 + 平台模型按课堂月度用量降频 | 网关 `usage.sqlite` 不可变明细，平台/商户可查与导出 |
-| 冷却 | 连接池：长冷却仅限密钥/计费/权限，其余 5 分钟退避 | 平台 DeepSeek：默认 300 秒冷却、300 秒探测；自有连接池同左（托管尚未部署该版本） | 失败直接报告，不自动换模型重试 |
+| 冷却 | 连接池：长冷却仅限密钥/计费/权限，其余 5 分钟退避 | 平台 DeepSeek：默认 300 秒冷却、300 秒探测；自有连接池同左 | 失败直接报告，不自动换模型重试 |
 
 产品设计与运营细则：教学两种形态见 [教学大模型与知识库运营方案](https://github.com/sy007-spec/top.seii.host.training/blob/main/docs/LLM_KNOWLEDGE_OPERATIONS.md)；Coworker 见管理库 [LLM与知识库总览](https://github.com/sy007-spec/InnoAgentManagement/blob/main/projects/inno-coworker-saas/docs/LLM与知识库总览.md)（产品仓库交付客户，运营与状态资料不放其中）。
 
