@@ -2,6 +2,8 @@
 
 Independent gateway extracted from the owner's Coworker gateway, with LiteLLM as its provider and routing engine. Training callers connect only to CoworkerLLM. This repository does not change the running Coworker SaaS deployment. See [source provenance](PROVENANCE.md).
 
+Which products use this gateway, their own model and knowledge-base paths, and open adoption decisions: [docs/LLM_USAGE_OVERVIEW.md](docs/LLM_USAGE_OVERVIEW.md) (2026-11-08). As of that date no production product sends inference through this gateway.
+
 ## Capability matrix
 
 | Capability | Implementation |
